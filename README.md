@@ -196,7 +196,7 @@ UAS_Web2_NIM_Nama/
 
 ## 👤 Identitas Mahasiswa
 
-- **Nama:** [Nama Mahasiswa]
-- **NIM:** [NIM]
+- **Nama:** Ricky Alfian Saputra
+- **NIM:** 312210409
 - **Mata Kuliah:** Pemrograman Web 2
 - **Tema:** Sistem Pelaporan Pengaduan Layanan Masyarakat (E-Report)
