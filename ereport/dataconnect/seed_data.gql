@@ -1,0 +1,41 @@
+mutation CreateSeedData @transaction {
+  user_insertMany(data: [
+    {
+      id: "71e54823-38e5-48b4-8e10-917173e35798",
+      fullName: "Alice Resident",
+      email: "alice@example.com",
+      role: "CITIZEN",
+      neighborhoodCode: "NORTH_HILL"
+    },
+    {
+      id: "b20f419c-8594-47c3-a3b0-4f52636a0d24",
+      fullName: "Bob Officer",
+      email: "bob@example.com",
+      role: "ADMIN",
+      neighborhoodCode: "DOWNTOWN"
+    }
+  ])
+  category_insertMany(data: [
+    {
+      id: "9218683e-908a-40a2-a8c6-291771146740",
+      name: "Pothole"
+    },
+    {
+      id: "e44d32e9-9a25-4122-870e-3c2243d68352",
+      name: "Graffiti"
+    }
+  ])
+  report_insertMany(data: [
+    {
+      id: "a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5",
+      title: "Large Pothole",
+      description: "A dangerous pothole on Main Street.",
+      latitude: 45.523062,
+      longitude: -122.676482,
+      status: "OPEN",
+      createdAt: "2024-05-20T10:00:00Z",
+      reporterId: "71e54823-38e5-48b4-8e10-917173e35798",
+      categoryId: "9218683e-908a-40a2-a8c6-291771146740"
+    }
+  ])
+}

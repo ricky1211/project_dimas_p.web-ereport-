@@ -1,0 +1,40 @@
+type User @table {
+  fullName: String!
+  email: String!
+  role: String!
+  neighborhoodCode: String!
+  phoneNumber: String
+  avatarUrl: String
+}
+
+type Category @table {
+  name: String!
+  iconUrl: String
+}
+
+type Report @table {
+  title: String!
+  description: String!
+  latitude: Float!
+  longitude: Float!
+  status: String!
+  createdAt: Timestamp!
+  imageUrl: String
+  resolutionNotes: String
+  reporter: User!
+  category: Category
+}
+
+type Comment @table {
+  content: String!
+  createdAt: Timestamp!
+  attachmentUrl: String
+  report: Report!
+  author: User!
+}
+
+type Vote @table {
+  createdAt: Timestamp!
+  report: Report!
+  user: User!
+}

@@ -1,0 +1,39 @@
+mutation CreateReport($title: String!, $description: String!, $lat: Float!, $lon: Float!, $catId: UUID) @auth(level: USER) {
+  report_insert(data: {
+    title: $title,
+    description: $description,
+    latitude: $lat,
+    longitude: $lon,
+    categoryId: $catId,
+    reporterId_expr: "auth.uid",
+    status: "OPEN",
+    createdAt_expr: "request.time"
+  })
+}
+
+mutation CreateComment($reportId: UUID!, $content: String!) @auth(level: USER) {
+  comment_insert(data: {
+    reportId: $reportId,
+    authorId_expr: "auth.uid",
+    content: $content,
+    createdAt_expr: "request.time"
+  })
+}
+
+mutation CreateVote($reportId: UUID!) @auth(level: USER) {
+  vote_insert(data: {
+    reportId: $reportId,
+    userId_expr: "auth.uid",
+    createdAt_expr: "request.time"
+  })
+}
+
+query GetCurrentUserProfile @auth(level: USER) {
+  user(key: { id_expr: "auth.uid" }) {
+    fullName
+    email
+    role
+    phoneNumber
+    avatarUrl
+  }
+}
