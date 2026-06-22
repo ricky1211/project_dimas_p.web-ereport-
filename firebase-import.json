@@ -1,0 +1,130 @@
+{
+  "users": {
+    "admin_default": {
+      "id": "admin_default",
+      "nama": "Administrator",
+      "email": "admin@ereport.id",
+      "role": "admin",
+      "created_at": "2026-06-22T07:00:00Z"
+    },
+    "petugas_default": {
+      "id": "petugas_default",
+      "nama": "Petugas Satu",
+      "email": "petugas@ereport.id",
+      "role": "petugas",
+      "created_at": "2026-06-22T07:00:00Z"
+    }
+  },
+  "kategori": {
+    "1": {
+      "id": "1",
+      "nama_kategori": "Infrastruktur",
+      "deskripsi": "Aduan terkait jalan rusak, jembatan, drainase, dan fasilitas umum"
+    },
+    "2": {
+      "id": "2",
+      "nama_kategori": "Keamanan",
+      "deskripsi": "Aduan terkait ketertiban, kriminalitas, dan keamanan lingkungan"
+    },
+    "3": {
+      "id": "3",
+      "nama_kategori": "Kebersihan",
+      "deskripsi": "Aduan terkait sampah, limbah, dan kebersihan lingkungan"
+    },
+    "4": {
+      "id": "4",
+      "nama_kategori": "Pelayanan Publik",
+      "deskripsi": "Aduan terkait pelayanan pemerintah dan administrasi"
+    },
+    "5": {
+      "id": "5",
+      "nama_kategori": "Bencana Alam",
+      "deskripsi": "Aduan terkait banjir, longsor, dan bencana alam lainnya"
+    }
+  },
+  "pelapor": {
+    "pelapor_1": {
+      "id": "pelapor_1",
+      "nama_pelapor": "Budi Santoso",
+      "nik": "3201234567890001",
+      "no_telepon": "081234567890",
+      "alamat": "Jl. Merdeka No. 10, RT 03/RW 05, Bogor",
+      "created_at": "2024-01-15T00:00:00Z"
+    },
+    "pelapor_2": {
+      "id": "pelapor_2",
+      "nama_pelapor": "Siti Rahayu",
+      "nik": "3201234567890002",
+      "no_telepon": "082345678901",
+      "alamat": "Jl. Sudirman No. 25, Bogor Tengah",
+      "created_at": "2024-01-20T00:00:00Z"
+    },
+    "pelapor_3": {
+      "id": "pelapor_3",
+      "nama_pelapor": "Ahmad Fauzi",
+      "nik": "3201234567890003",
+      "no_telepon": "083456789012",
+      "alamat": "Perumahan Griya Asri Blok C No. 7, Bogor",
+      "created_at": "2024-01-20T00:00:00Z"
+    }
+  },
+  "laporan": {
+    "-O_laporan_001": {
+      "id": "-O_laporan_001",
+      "kode_laporan": "RPT-2024-001",
+      "pelapor_id": "pelapor_1",
+      "kategori_id": "1",
+      "petugas_id": null,
+      "judul_laporan": "Jalan Berlubang di Jl. Ahmad Yani",
+      "isi_laporan": "Terdapat lubang besar di tengah jalan yang sangat membahayakan pengendara, terutama di malam hari karena tidak ada penerangan.",
+      "lokasi": "Jl. Ahmad Yani KM 3, Bogor",
+      "status": "diproses",
+      "tanggal_laporan": "2024-01-15",
+      "catatan_petugas": null,
+      "rating": null,
+      "feedback_warga": null,
+      "is_banding": 0,
+      "alasan_urgensi": null,
+      "created_at": "2024-01-15T00:00:00Z",
+      "updated_at": "2024-01-15T00:00:00Z"
+    },
+    "-O_laporan_002": {
+      "id": "-O_laporan_002",
+      "kode_laporan": "RPT-2024-002",
+      "pelapor_id": "pelapor_2",
+      "kategori_id": "3",
+      "petugas_id": null,
+      "judul_laporan": "Tumpukan Sampah Tidak Diangkut",
+      "isi_laporan": "Sampah di TPS Jl. Pajajaran sudah menumpuk lebih dari 5 hari dan menimbulkan bau tidak sedap serta mengundang lalat.",
+      "lokasi": "TPS Jl. Pajajaran, Bogor",
+      "status": "baru",
+      "tanggal_laporan": "2024-01-20",
+      "catatan_petugas": null,
+      "rating": null,
+      "feedback_warga": null,
+      "is_banding": 0,
+      "alasan_urgensi": null,
+      "created_at": "2024-01-20T00:00:00Z",
+      "updated_at": "2024-01-20T00:00:00Z"
+    },
+    "-O_laporan_003": {
+      "id": "-O_laporan_003",
+      "kode_laporan": "RPT-2024-003",
+      "pelapor_id": "pelapor_3",
+      "kategori_id": "2",
+      "petugas_id": null,
+      "judul_laporan": "Pencurian Motor di Parkiran",
+      "isi_laporan": "Telah terjadi pencurian sepeda motor di area parkiran pasar pada tanggal 19 Januari 2024 pukul 14.00 WIB.",
+      "lokasi": "Parkiran Pasar Bogor, Jl. Dewi Sartika",
+      "status": "selesai",
+      "tanggal_laporan": "2024-01-20",
+      "catatan_petugas": null,
+      "rating": null,
+      "feedback_warga": null,
+      "is_banding": 0,
+      "alasan_urgensi": null,
+      "created_at": "2024-01-20T00:00:00Z",
+      "updated_at": "2024-01-20T00:00:00Z"
+    }
+  }
+}
