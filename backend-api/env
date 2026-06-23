@@ -72,7 +72,7 @@
 # FIREBASE CONFIGURATION (E-REPORT PROJECT)
 #--------------------------------------------------------------------
 
-VITE_FIREBASE_API_KEY = "Isi_Dengan_GCP_API_KEY_Asli_Anda"
+VITE_FIREBASE_API_KEY = "AIzaSyC5-moOb16BFVwoiISR7idxH_jo9PBQXJA"
 VITE_FIREBASE_AUTH_DOMAIN = "ereportnew.firebaseapp.com"
 VITE_FIREBASE_PROJECT_ID = "ereportnew"
 VITE_FIREBASE_STORAGE_BUCKET = "ereportnew.firebasestorage.app"

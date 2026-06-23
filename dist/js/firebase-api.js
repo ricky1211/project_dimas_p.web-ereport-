@@ -2,9 +2,10 @@
 // Firebase Initialization & Realtime Database API Wrapper for E-Report SPA
 
 const firebaseConfig = {
-    apiKey: "[GCP_API_KEY]",
+    apiKey: "AIzaSyC5-moOb16BFVwoiISR7idxH_jo9PBQXJA",
     authDomain: "ereportnew.firebaseapp.com",
     projectId: "ereportnew",
+    databaseURL: "[GCP_DATABASE_URL]",
     storageBucket: "ereportnew.firebasestorage.app",
     messagingSenderId: "1067760269882",
     appId: "1:1067760269882:web:f92cd2a7af943818b2d303",
