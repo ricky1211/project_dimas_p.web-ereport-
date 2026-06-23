@@ -8,8 +8,8 @@ const firebaseConfig = {
     databaseURL: "[GCP_DATABASE_URL]",
     storageBucket: "ereportnew.firebasestorage.app",
     messagingSenderId: "1067760269882",
-    appId: "1:1067760269882:web:f92cd2a7af943818b2d303",
-    measurementId: "G-8TX2RBW1T8"
+    appId: "1:1067760269882:web:dd8be26bb6c3d0d5b2d303",
+    measurementId: "G-1R2EZE3M5B"
 };
 
 // Inisialisasi Firebase
