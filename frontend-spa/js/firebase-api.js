@@ -5,7 +5,7 @@ const firebaseConfig = {
     apiKey: "AIzaSyC5-moOb16BFVwoiISR7idxH_jo9PBQXJA",
     authDomain: "ereportnew.firebaseapp.com",
     projectId: "ereportnew",
-    databaseURL: "[GCP_DATABASE_URL]",
+    databaseURL: "https://ereportnew-default-rtdb.firebaseio.com",
     storageBucket: "ereportnew.firebasestorage.app",
     messagingSenderId: "1067760269882",
     appId: "1:1067760269882:web:dd8be26bb6c3d0d5b2d303",
