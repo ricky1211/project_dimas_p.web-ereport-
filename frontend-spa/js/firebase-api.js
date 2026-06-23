@@ -92,25 +92,70 @@ const api = {
         if (path === '/dashboard/stats') {
             const reportsSnap = await rtdb.ref('laporan').once('value');
             const usersSnap = await rtdb.ref('users').once('value');
+            const katSnap = await rtdb.ref('kategori').once('value');
+            const pelSnap = await rtdb.ref('pelapor').once('value');
 
-            let stats = { total_laporan: 0, baru: 0, diproses: 0, selesai: 0, ditolak: 0, total_petugas: 0 };
+            let total_laporan = 0;
+            let total_baru = 0;
+            let total_diproses = 0;
+            let total_selesai = 0;
+            let total_ditolak = 0;
 
-            if (usersSnap.exists()) {
-                usersSnap.forEach(child => {
-                    if (child.val().role === 'petugas') stats.total_petugas++;
-                });
+            const reports = [];
+
+            // Map nama kategori & nama pelapor
+            const kategoriMap = {};
+            if (katSnap.exists()) {
+                katSnap.forEach(child => { kategoriMap[child.key] = child.val().nama_kategori; });
+            }
+            const pelaporMap = {};
+            if (pelSnap.exists()) {
+                pelSnap.forEach(child => { pelaporMap[child.key] = child.val().nama_pelapor; });
             }
 
             if (reportsSnap.exists()) {
                 reportsSnap.forEach(child => {
                     const r = child.val();
-                    stats.total_laporan++;
-                    if (r.status === 'baru') stats.baru++;
-                    else if (r.status === 'diproses') stats.diproses++;
-                    else if (r.status === 'selesai') stats.selesai++;
-                    else if (r.status === 'ditolak') stats.ditolak++;
+                    total_laporan++;
+                    if (r.status === 'baru') total_baru++;
+                    else if (r.status === 'diproses') total_diproses++;
+                    else if (r.status === 'selesai') total_selesai++;
+                    else if (r.status === 'ditolak') total_ditolak++;
+
+                    reports.push({
+                        id: child.key,
+                        kode_laporan: r.kode_laporan || '',
+                        judul_laporan: r.judul_laporan || '',
+                        status: r.status || '',
+                        tanggal_laporan: r.tanggal_laporan || '',
+                        catatan_petugas: r.catatan_petugas || '',
+                        rating: r.rating || 0,
+                        feedback_warga: r.feedback_warga || '',
+                        is_banding: r.is_banding || 0,
+                        alasan_urgensi: r.alasan_urgensi || '',
+                        nama_pelapor: pelaporMap[r.pelapor_id] || '-',
+                        nama_kategori: kategoriMap[r.kategori_id] || '-',
+                        created_at: r.created_at || ''
+                    });
                 });
             }
+
+            // Urutkan laporan terbaru berdasarkan tanggal dibuat (descending)
+            reports.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
+            // Ambil 5 laporan terbaru
+            const laporan_terbaru = reports.slice(0, 5);
+
+            const stats = {
+                total_laporan,
+                total_baru,
+                total_diproses,
+                total_selesai,
+                total_ditolak,
+                total_kategori: katSnap.exists() ? katSnap.numChildren() : 0,
+                total_pelapor: pelSnap.exists() ? pelSnap.numChildren() : 0,
+                laporan_terbaru
+            };
 
             return { data: { status: 200, data: stats } };
         }
