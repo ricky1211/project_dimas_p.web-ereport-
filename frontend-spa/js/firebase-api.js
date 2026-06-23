@@ -232,7 +232,7 @@ const api = {
                     }
                 };
             } catch (err) {
-                if (err.code === 'auth/user-not-found') {
+                if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
                     // Daftarkan otomatis di Auth jika user sudah ada di database tetapi belum di Firebase Auth
                     try {
                         const userCred = await auth.createUserWithEmailAndPassword(email, password);
@@ -250,6 +250,9 @@ const api = {
                             }
                         };
                     } catch (regErr) {
+                        if (regErr.code === 'auth/email-already-in-use') {
+                            throw { response: { data: { message: 'Kredensial tidak valid: Password Anda salah.' } } };
+                        }
                         throw { response: { data: { message: 'Gagal membuat kredensial: ' + regErr.message } } };
                     }
                 }
