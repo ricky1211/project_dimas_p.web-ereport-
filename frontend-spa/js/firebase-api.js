@@ -2,14 +2,13 @@
 // Firebase Initialization & Realtime Database API Wrapper for E-Report SPA
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCF7jzkhLAMouHaO5ZizbJ3Pj1M75zFK8g",
-    authDomain: "ereport-6f9c3.firebaseapp.com",
-    databaseURL: "https://ereport-6f9c3-default-rtdb.firebaseio.com",
-    projectId: "ereport-6f9c3",
-    storageBucket: "ereport-6f9c3.firebasestorage.app",
-    messagingSenderId: "75485805767",
-    appId: "1:75485805767:web:1c5c2bfb011298f146d2e2",
-    measurementId: "G-69N67QD0BL"
+    apiKey: "[GCP_API_KEY]",
+    authDomain: "ereportnew.firebaseapp.com",
+    projectId: "ereportnew",
+    storageBucket: "ereportnew.firebasestorage.app",
+    messagingSenderId: "1067760269882",
+    appId: "1:1067760269882:web:f92cd2a7af943818b2d303",
+    measurementId: "G-8TX2RBW1T8"
 };
 
 // Inisialisasi Firebase
@@ -66,7 +65,7 @@ async function generateKodeLaporan() {
 
     const snap = await rtdb.ref('laporan').once('value');
     let maxNum = 0;
-    
+
     if (snap.exists()) {
         snap.forEach(child => {
             const code = child.val().kode_laporan;
@@ -92,9 +91,9 @@ const api = {
         if (path === '/dashboard/stats') {
             const reportsSnap = await rtdb.ref('laporan').once('value');
             const usersSnap = await rtdb.ref('users').once('value');
-            
+
             let stats = { total_laporan: 0, baru: 0, diproses: 0, selesai: 0, ditolak: 0, total_petugas: 0 };
-            
+
             if (usersSnap.exists()) {
                 usersSnap.forEach(child => {
                     if (child.val().role === 'petugas') stats.total_petugas++;
@@ -253,7 +252,7 @@ const api = {
                         throw { response: { data: { message: 'Gagal membuat kredensial: ' + regErr.message } } };
                     }
                 }
-                
+
                 // Fallback untuk admin default
                 if (email === 'admin@ereport.id' && password === 'admin123') {
                     return {
@@ -270,18 +269,18 @@ const api = {
 
         // 2. Auth Logout
         if (path === '/auth/logout') {
-            try { await auth.signOut(); } catch (e) {}
+            try { await auth.signOut(); } catch (e) { }
             return { data: { status: 200, message: 'Logout sukses' } };
         }
 
         // 3. Public Create Laporan
         if (path === '/laporan/public-create') {
             const { nama_pelapor, nik, no_telepon, alamat, judul_laporan, kategori_id, lokasi, isi_laporan } = payload;
-            
+
             // Cari/Buat Pelapor berdasarkan NIK
             const pelSnap = await rtdb.ref('pelapor').once('value');
             let pelaporId = null;
-            
+
             if (pelSnap.exists()) {
                 pelSnap.forEach(child => {
                     if (child.val().nik === nik) {
@@ -304,7 +303,7 @@ const api = {
             const kode = await generateKodeLaporan();
             const reportRef = rtdb.ref('laporan').push();
             const reportId = reportRef.key;
-            
+
             const reportData = {
                 id: reportId,
                 kode_laporan: kode,
@@ -399,7 +398,7 @@ const api = {
             const ref = rtdb.ref('users').push();
             let id = ref.key;
             const data = { id, ...payload, created_at: new Date().toISOString() };
-            
+
             // Buat user di Auth jika email & password tersedia
             if (payload.email && payload.password) {
                 try {
@@ -496,7 +495,7 @@ const api = {
     },
 
     interceptors: {
-        request: { use: () => {} },
-        response: { use: () => {} }
+        request: { use: () => { } },
+        response: { use: () => { } }
     }
 };
