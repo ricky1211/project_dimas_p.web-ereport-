@@ -3,34 +3,31 @@
 namespace App\Controllers;
 
 use CodeIgniter\RESTful\ResourceController;
-use App\Models\UserModel;
+use App\Libraries\FirestoreClient;
 
 class AuthController extends ResourceController
 {
     protected $format = 'json';
 
+    // POST /api/auth/login
     public function login()
     {
-        $rules = [
-            'email'    => 'required|valid_email',
-            'password' => 'required|min_length[6]',
-        ];
+        $input    = $this->request->getJSON(true) ?? [];
+        $email    = $input['email']    ?? $this->request->getPost('email')    ?? '';
+        $password = $input['password'] ?? $this->request->getPost('password') ?? '';
 
-        if (!$this->validate($rules)) {
+        if (!$email || !$password) {
             return $this->respond([
                 'status'  => 422,
                 'error'   => 'Validation Error',
-                'message' => $this->validator->getErrors(),
+                'message' => 'Email dan password wajib diisi.',
             ], 422);
         }
 
-        $userModel = new UserModel();
-        $email     = $this->request->getJSON(true)['email'] ?? $this->request->getPost('email');
-        $password  = $this->request->getJSON(true)['password'] ?? $this->request->getPost('password');
+        $db    = new FirestoreClient();
+        $users = $db->collection('users')->where('email', '==', $email);
 
-        $user = $userModel->where('email', $email)->first();
-
-        if (!$user || (!password_verify($password, $user['password']) && $password !== $user['password'])) {
+        if (empty($users)) {
             return $this->respond([
                 'status'  => 401,
                 'error'   => 'Unauthorized',
@@ -38,38 +35,57 @@ class AuthController extends ResourceController
             ], 401);
         }
 
-        // Generate token
+        $userDoc = $users[0];
+        $user    = $userDoc['data'];
+        $userId  = $userDoc['id'];
+
+        if (!password_verify($password, $user['password'] ?? '')) {
+            return $this->respond([
+                'status'  => 401,
+                'error'   => 'Unauthorized',
+                'message' => 'Email atau password salah.',
+            ], 401);
+        }
+
+        // Generate token baru dan simpan ke Firestore
         $token = bin2hex(random_bytes(32));
-        $userModel->update($user['id'], ['token' => $token]);
+        $db->collection('users')->doc($userId)->update([
+            'token'      => $token,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
 
         return $this->respond([
             'status'  => 200,
             'message' => 'Login berhasil.',
             'data'    => [
-                'id'    => $user['id'],
-                'nama'  => $user['nama'],
-                'email' => $user['email'],
-                'role'  => $user['role'],
+                'id'    => $userId,
+                'nama'  => $user['nama']  ?? '',
+                'email' => $user['email'] ?? '',
+                'role'  => $user['role']  ?? 'petugas',
                 'token' => $token,
             ],
-        ], 200);
+        ]);
     }
 
+    // POST /api/auth/logout
     public function logout()
     {
         $authHeader = $this->request->getHeaderLine('Authorization');
         if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
             $token = substr($authHeader, 7);
-            $userModel = new UserModel();
-            $user = $userModel->where('token', $token)->first();
-            if ($user) {
-                $userModel->update($user['id'], ['token' => null]);
+            $db    = new FirestoreClient();
+            $users = $db->collection('users')->where('token', '==', $token);
+            if (!empty($users)) {
+                $db->collection('users')->doc($users[0]['id'])->update([
+                    'token'      => '',
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
             }
         }
 
         return $this->respond([
             'status'  => 200,
             'message' => 'Logout berhasil.',
-        ], 200);
+        ]);
     }
 }

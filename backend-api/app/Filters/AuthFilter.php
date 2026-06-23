@@ -5,7 +5,7 @@ namespace App\Filters;
 use CodeIgniter\Filters\FilterInterface;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
-use App\Models\UserModel;
+use App\Libraries\FirestoreClient;
 
 class AuthFilter implements FilterInterface
 {
@@ -20,23 +20,24 @@ class AuthFilter implements FilterInterface
                 ->setJSON([
                     'status'  => 401,
                     'error'   => 'Unauthorized',
-                    'message' => 'Token tidak ditemukan. Harap login terlebih dahulu.'
+                    'message' => 'Token tidak ditemukan. Harap login terlebih dahulu.',
                 ]);
         }
 
         $token = substr($authHeader, 7);
 
-        $userModel = new UserModel();
-        $user = $userModel->where('token', $token)->first();
+        // Cari token di Firestore koleksi 'users'
+        $db    = new FirestoreClient();
+        $users = $db->collection('users')->where('token', '==', $token);
 
-        if (!$user) {
+        if (empty($users) || empty($users[0]['data']['token'])) {
             return service('response')
                 ->setStatusCode(401)
                 ->setContentType('application/json')
                 ->setJSON([
                     'status'  => 401,
                     'error'   => 'Unauthorized',
-                    'message' => 'Token tidak valid atau sesi telah habis.'
+                    'message' => 'Token tidak valid atau sesi telah habis.',
                 ]);
         }
     }

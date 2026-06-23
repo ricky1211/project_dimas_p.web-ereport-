@@ -3,59 +3,111 @@
 namespace App\Controllers;
 
 use CodeIgniter\RESTful\ResourceController;
-use App\Models\LaporanModel;
+use App\Libraries\FirestoreClient;
 
 class LaporanController extends ResourceController
 {
-    protected $format    = 'json';
-    protected $modelName = LaporanModel::class;
+    protected $format = 'json';
 
-    private function getLoggedInUser()
+    private FirestoreClient $db;
+
+    public function __construct()
+    {
+        $this->db = new FirestoreClient();
+    }
+
+    // Ambil user dari Bearer token
+    private function getLoggedInUser(): ?array
     {
         $authHeader = $this->request->getHeaderLine('Authorization');
         if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
             $token = substr($authHeader, 7);
-            $userModel = new \App\Models\UserModel();
-            return $userModel->where('token', $token)->first();
+            $users = $this->db->collection('users')->where('token', '==', $token);
+            return empty($users) ? null : $users[0];
         }
         return null;
+    }
+
+    // Embed relasi (kategori, pelapor, petugas) ke dalam data laporan
+    private function embedRelasi(array $laporanDoc): array
+    {
+        $data = $laporanDoc['data'];
+        $data['id'] = $laporanDoc['id'];
+
+        if (!empty($data['kategori_id'])) {
+            $kat = $this->db->collection('kategori_aduan')->getById($data['kategori_id']);
+            $data['nama_kategori'] = $kat['data']['nama_kategori'] ?? '-';
+        }
+        if (!empty($data['pelapor_id'])) {
+            $pel = $this->db->collection('pelapor')->getById($data['pelapor_id']);
+            $pelData = $pel['data'] ?? [];
+            $data['nama_pelapor'] = $pelData['nama_pelapor'] ?? '-';
+            $data['nik']          = $pelData['nik']          ?? '';
+            $data['no_telepon']   = $pelData['no_telepon']   ?? '';
+        }
+        if (!empty($data['petugas_id'])) {
+            $pet = $this->db->collection('users')->getById($data['petugas_id']);
+            $data['nama_petugas'] = $pet['data']['nama'] ?? '-';
+        } else {
+            $data['nama_petugas'] = '';
+        }
+        return $data;
+    }
+
+    // Generate kode laporan otomatis: RPT-YYYY-NNN
+    private function generateKodeLaporan(): string
+    {
+        $year     = date('Y');
+        $semua    = $this->db->collection('laporan')->get();
+        $filtered = array_filter($semua, fn($d) => str_starts_with($d['data']['kode_laporan'] ?? '', "RPT-{$year}"));
+        $kodes    = array_column(array_column($filtered, 'data'), 'kode_laporan');
+        $nums     = [];
+        foreach ($kodes as $k) {
+            $parts = explode('-', $k);
+            if (count($parts) === 3) $nums[] = (int) $parts[2];
+        }
+        $next = empty($nums) ? 1 : max($nums) + 1;
+        return 'RPT-' . $year . '-' . str_pad($next, 3, '0', STR_PAD_LEFT);
     }
 
     // GET /api/laporan
     public function index()
     {
-        $model  = new LaporanModel();
+        $user   = $this->getLoggedInUser();
         $status = $this->request->getGet('status');
+        $semua  = $this->db->collection('laporan')->get();
 
-        $user = $this->getLoggedInUser();
-        $data = $model->getLaporanWithRelations();
-
-        if ($user && $user['role'] === 'petugas') {
-            // Petugas hanya melihat laporan yang ditugaskan kepadanya
-            $data = array_filter($data, fn($item) => (int)$item['petugas_id'] === (int)$user['id']);
-            $data = array_values($data);
+        // Filter berdasarkan petugas_id jika role petugas
+        if ($user && ($user['data']['role'] ?? '') === 'petugas') {
+            $semua = array_filter($semua, fn($d) => ($d['data']['petugas_id'] ?? '') === $user['id']);
+            $semua = array_values($semua);
         }
 
+        // Filter berdasarkan status
         if ($status && $status !== 'semua') {
-            $data = array_filter($data, fn($item) => $item['status'] === $status);
-            $data = array_values($data);
+            $semua = array_filter($semua, fn($d) => ($d['data']['status'] ?? '') === $status);
+            $semua = array_values($semua);
         }
+
+        // Urutkan terbaru dulu
+        usort($semua, fn($a, $b) => strcmp($b['data']['created_at'] ?? '', $a['data']['created_at'] ?? ''));
+
+        $data = array_map([$this, 'embedRelasi'], $semua);
 
         return $this->respond([
             'status'  => 200,
             'message' => 'Data laporan berhasil diambil.',
             'count'   => count($data),
-            'data'    => $data,
+            'data'    => array_values($data),
         ]);
     }
 
     // GET /api/laporan/:id
     public function show($id = null)
     {
-        $model = new LaporanModel();
-        $data  = $model->getLaporanWithRelations($id);
+        $doc = $this->db->collection('laporan')->getById($id);
 
-        if (!$data) {
+        if (!$doc) {
             return $this->respond([
                 'status'  => 404,
                 'error'   => 'Not Found',
@@ -66,53 +118,70 @@ class LaporanController extends ResourceController
         return $this->respond([
             'status'  => 200,
             'message' => 'Detail laporan berhasil diambil.',
-            'data'    => $data,
+            'data'    => $this->embedRelasi($doc),
         ]);
     }
 
     // POST /api/laporan/create (PROTECTED)
     public function create()
     {
-        $model = new LaporanModel();
-        $input = $this->request->getJSON(true) ?? $this->request->getPost();
+        $input = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
 
-        if (isset($input['petugas_id']) && $input['petugas_id'] === '') {
-            $input['petugas_id'] = null;
+        // Validasi wajib
+        $required = ['pelapor_id', 'kategori_id', 'judul_laporan', 'isi_laporan', 'lokasi', 'tanggal_laporan'];
+        foreach ($required as $f) {
+            if (empty($input[$f])) {
+                return $this->respond([
+                    'status'  => 422,
+                    'error'   => 'Validation Error',
+                    'message' => "Field '{$f}' wajib diisi.",
+                ], 422);
+            }
         }
-
-        if (!$model->validate($input)) {
-            return $this->respond([
-                'status'  => 422,
-                'error'   => 'Validation Error',
-                'message' => $model->errors(),
-            ], 422);
-        }
-
-        $input['kode_laporan'] = $model->generateKodeLaporan();
 
         // Handle upload foto jika ada
-        $foto = $this->request->getFile('foto_bukti');
+        $fotoBukti = $input['foto_bukti'] ?? null;
+        $foto      = $this->request->getFile('foto_bukti');
         if ($foto && $foto->isValid() && !$foto->hasMoved()) {
-            $namaFoto = $foto->getRandomName();
+            $namaFoto  = $foto->getRandomName();
             $foto->move(WRITEPATH . 'uploads/laporan', $namaFoto);
-            $input['foto_bukti'] = $namaFoto;
+            $fotoBukti = $namaFoto;
         }
 
-        $id = $model->insert($input);
+        $laporanData = [
+            'kode_laporan'    => $this->generateKodeLaporan(),
+            'pelapor_id'      => $input['pelapor_id'],
+            'kategori_id'     => $input['kategori_id'],
+            'petugas_id'      => $input['petugas_id'] ?? '',
+            'judul_laporan'   => $input['judul_laporan'],
+            'isi_laporan'     => $input['isi_laporan'],
+            'lokasi'          => $input['lokasi'],
+            'foto_bukti'      => $fotoBukti ?? '',
+            'status'          => 'baru',
+            'tanggal_laporan' => $input['tanggal_laporan'],
+            'catatan_petugas' => '',
+            'rating'          => 0,
+            'feedback_warga'  => '',
+            'is_banding'      => 0,
+            'alasan_urgensi'  => '',
+            'created_at'      => date('Y-m-d H:i:s'),
+            'updated_at'      => date('Y-m-d H:i:s'),
+        ];
+
+        $newId = $this->db->collection('laporan')->add($laporanData);
 
         return $this->respondCreated([
             'status'  => 201,
             'message' => 'Laporan berhasil ditambahkan.',
-            'data'    => $model->getLaporanWithRelations($id),
+            'data'    => $this->embedRelasi(['id' => $newId, 'data' => $laporanData]),
         ]);
     }
 
     // PUT /api/laporan/update/:id (PROTECTED)
     public function update($id = null)
     {
-        $model = new LaporanModel();
-
-        if (!$model->find($id)) {
+        $doc = $this->db->collection('laporan')->getById($id);
+        if (!$doc) {
             return $this->respond([
                 'status'  => 404,
                 'error'   => 'Not Found',
@@ -121,30 +190,36 @@ class LaporanController extends ResourceController
         }
 
         $input = $this->request->getJSON(true) ?? [];
-
         if (empty($input)) {
-            $input = $this->request->getRawInput();
+            parse_str($this->request->getRawInput(), $input);
         }
 
-        if (isset($input['petugas_id']) && $input['petugas_id'] === '') {
-            $input['petugas_id'] = null;
+        $allowed = [
+            'judul_laporan', 'isi_laporan', 'lokasi', 'status',
+            'catatan_petugas', 'petugas_id', 'foto_bukti',
+            'tanggal_laporan', 'kategori_id',
+        ];
+        $update = [];
+        foreach ($allowed as $key) {
+            if (array_key_exists($key, $input)) {
+                $update[$key] = $input[$key] === '' ? '' : $input[$key];
+            }
         }
+        $update['updated_at'] = date('Y-m-d H:i:s');
 
-        $model->update($id, $input);
+        $this->db->collection('laporan')->doc($id)->update($update);
 
         return $this->respond([
             'status'  => 200,
             'message' => 'Laporan berhasil diperbarui.',
-            'data'    => $model->getLaporanWithRelations($id),
+            'data'    => $this->embedRelasi($this->db->collection('laporan')->getById($id)),
         ]);
     }
 
     // DELETE /api/laporan/delete/:id (PROTECTED)
     public function delete($id = null)
     {
-        $model = new LaporanModel();
-
-        if (!$model->find($id)) {
+        if (!$this->db->collection('laporan')->getById($id)) {
             return $this->respond([
                 'status'  => 404,
                 'error'   => 'Not Found',
@@ -152,7 +227,7 @@ class LaporanController extends ResourceController
             ], 404);
         }
 
-        $model->delete($id);
+        $this->db->collection('laporan')->doc($id)->delete();
 
         return $this->respondDeleted([
             'status'  => 200,
@@ -160,185 +235,170 @@ class LaporanController extends ResourceController
         ]);
     }
 
-    // POST /api/laporan/public-create
+    // POST /api/laporan/public-create (PUBLIK - tanpa auth)
     public function publicCreate()
     {
-        $input = $this->request->getJSON(true) ?? $this->request->getPost();
+        $input = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
 
-        $rules = [
-            'nama_pelapor'   => 'required|min_length[3]',
-            'nik'            => 'required|exact_length[16]|numeric',
-            'no_telepon'     => 'required|min_length[10]',
-            'alamat'         => 'required',
-            'judul_laporan'  => 'required|min_length[5]',
-            'isi_laporan'    => 'required|min_length[10]',
-            'kategori_id'    => 'required|integer',
-            'lokasi'         => 'required',
+        $required = [
+            'nama_pelapor', 'nik', 'no_telepon', 'alamat',
+            'judul_laporan', 'isi_laporan', 'kategori_id', 'lokasi',
         ];
-
-        if (!$this->validate($rules)) {
-            return $this->respond([
-                'status'  => 422,
-                'error'   => 'Validation Error',
-                'message' => $this->validator->getErrors(),
-            ], 422);
+        foreach ($required as $f) {
+            if (empty($input[$f])) {
+                return $this->respond([
+                    'status'  => 422,
+                    'error'   => 'Validation Error',
+                    'message' => "Field '{$f}' wajib diisi.",
+                ], 422);
+            }
         }
 
-        // 1. Proses data pelapor (warga)
-        $pelaporModel = new \App\Models\PelaporModel();
-        $nik = $input['nik'];
-        $pelapor = $pelaporModel->where('nik', $nik)->first();
-
-        $pelaporData = [
+        // 1. Cari atau buat pelapor berdasarkan NIK
+        $nik          = $input['nik'];
+        $pelaporExist = $this->db->collection('pelapor')->where('nik', '==', $nik);
+        $pelaporData  = [
             'nama_pelapor' => $input['nama_pelapor'],
             'nik'          => $nik,
             'no_telepon'   => $input['no_telepon'],
             'alamat'       => $input['alamat'],
+            'updated_at'   => date('Y-m-d H:i:s'),
         ];
 
-        if ($pelapor) {
-            $pelaporId = $pelapor['id'];
-            $pelaporModel->update($pelaporId, $pelaporData);
+        if (!empty($pelaporExist)) {
+            $pelaporId = $pelaporExist[0]['id'];
+            $this->db->collection('pelapor')->doc($pelaporId)->update($pelaporData);
         } else {
-            $pelaporId = $pelaporModel->insert($pelaporData);
+            $pelaporData['created_at'] = date('Y-m-d H:i:s');
+            $pelaporId = $this->db->collection('pelapor')->add($pelaporData);
         }
 
-        // 2. Proses data laporan
-        $laporanModel = new LaporanModel();
-        
-        $foto_bukti = null;
-        $foto = $this->request->getFile('foto_bukti');
+        // 2. Handle foto
+        $fotoBukti = $input['foto_bukti'] ?? '';
+        $foto      = $this->request->getFile('foto_bukti');
         if ($foto && $foto->isValid() && !$foto->hasMoved()) {
-            $namaFoto = $foto->getRandomName();
+            $namaFoto  = $foto->getRandomName();
             $foto->move(WRITEPATH . 'uploads/laporan', $namaFoto);
-            $foto_bukti = $namaFoto;
-        } else if (!empty($input['foto_bukti'])) {
-            $foto_bukti = $input['foto_bukti'];
+            $fotoBukti = $namaFoto;
         }
 
+        // 3. Buat laporan
         $laporanData = [
-            'kode_laporan'    => $laporanModel->generateKodeLaporan(),
+            'kode_laporan'    => $this->generateKodeLaporan(),
             'pelapor_id'      => $pelaporId,
             'kategori_id'     => $input['kategori_id'],
-            'petugas_id'      => null,
+            'petugas_id'      => '',
             'judul_laporan'   => $input['judul_laporan'],
             'isi_laporan'     => $input['isi_laporan'],
             'lokasi'          => $input['lokasi'],
-            'foto_bukti'      => $foto_bukti,
+            'foto_bukti'      => $fotoBukti,
             'status'          => 'baru',
             'tanggal_laporan' => $input['tanggal_laporan'] ?? date('Y-m-d'),
+            'catatan_petugas' => '',
+            'rating'          => 0,
+            'feedback_warga'  => '',
+            'is_banding'      => 0,
+            'alasan_urgensi'  => '',
+            'created_at'      => date('Y-m-d H:i:s'),
+            'updated_at'      => date('Y-m-d H:i:s'),
         ];
 
-        $id = $laporanModel->insert($laporanData);
+        $newId = $this->db->collection('laporan')->add($laporanData);
 
         return $this->respondCreated([
             'status'  => 201,
             'message' => 'Pengaduan Anda berhasil dikirim.',
-            'data'    => $laporanModel->getLaporanWithRelations($id),
+            'data'    => $this->embedRelasi(['id' => $newId, 'data' => $laporanData]),
         ]);
     }
 
-    // POST /api/laporan/feedback/:id  — Submit ATAU update feedback (via laporan.id)
+    // POST /api/laporan/feedback/:id
     public function submitFeedback($id = null)
     {
-        $model   = new LaporanModel();
-        $laporan = $model->find($id);
-
-        if (!$laporan) {
+        $doc = $this->db->collection('laporan')->getById($id);
+        if (!$doc) {
             return $this->respond(['status' => 404, 'message' => 'Laporan tidak ditemukan.'], 404);
         }
 
-        if (!in_array($laporan['status'], ['diproses', 'selesai', 'ditolak'])) {
+        $laporan = $doc['data'];
+
+        if (!in_array($laporan['status'] ?? '', ['diproses', 'selesai', 'ditolak'])) {
             return $this->respond([
                 'status'  => 400,
                 'message' => 'Feedback hanya dapat diberikan jika laporan diproses, selesai, atau ditolak.',
             ], 400);
         }
 
-        $input = $this->request->getJSON(true) ?? $this->request->getPost();
-        $rules = [
-            'rating'         => 'required|integer|greater_than_equal_to[1]|less_than_equal_to[5]',
-            'feedback_warga' => 'required|min_length[3]',
-        ];
-        if (isset($input['is_banding']) && (int)$input['is_banding'] === 1) {
-            $rules['alasan_urgensi'] = 'required|min_length[5]';
-        }
-        if (!$this->validate($rules)) {
-            return $this->respond(['status' => 422, 'message' => $this->validator->getErrors()], 422);
-        }
+        $input = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
 
-        $isUpdate   = !empty($laporan['rating']);
         $updateData = [
-            'rating'         => (int)$input['rating'],
-            'feedback_warga' => $input['feedback_warga'],
+            'rating'         => (int) ($input['rating'] ?? 0),
+            'feedback_warga' => $input['feedback_warga'] ?? '',
+            'updated_at'     => date('Y-m-d H:i:s'),
         ];
-        if (isset($input['is_banding']) && (int)$input['is_banding'] === 1 && $laporan['status'] === 'ditolak') {
-            $updateData['is_banding']     = 1;
-            $updateData['alasan_urgensi'] = $input['alasan_urgensi'];
+
+        $isBanding = isset($input['is_banding']) && (int) $input['is_banding'] === 1 && ($laporan['status'] ?? '') === 'ditolak';
+        if ($isBanding) {
+            $updateData['is_banding']    = 1;
+            $updateData['alasan_urgensi'] = $input['alasan_urgensi'] ?? '';
             $updateData['status']         = 'baru';
         }
 
-        $model->update($id, $updateData);
+        $this->db->collection('laporan')->doc($id)->update($updateData);
 
         return $this->respond([
             'status'  => 200,
-            'message' => isset($updateData['is_banding'])
+            'message' => $isBanding
                 ? 'Banding dan ulasan berhasil diajukan. Laporan akan ditinjau kembali.'
-                : ($isUpdate ? 'Ulasan berhasil diperbarui. Terima kasih!' : 'Ulasan berhasil disimpan. Terima kasih!'),
-            'data'    => $model->getLaporanWithRelations($id),
+                : 'Ulasan berhasil disimpan. Terima kasih!',
+            'data'    => $this->embedRelasi($this->db->collection('laporan')->getById($id)),
         ]);
     }
 
-    // POST /api/laporan/feedback-by-kode/:kode — Submit/Update feedback via kode_laporan (publik)
+    // POST /api/laporan/feedback-by-kode/:kode (PUBLIK)
     public function feedbackByKode($kode = null)
     {
-        $model   = new LaporanModel();
-        $laporan = $model->where('kode_laporan', $kode)->first();
-
-        if (!$laporan) {
+        $docs = $this->db->collection('laporan')->where('kode_laporan', '==', $kode);
+        if (empty($docs)) {
             return $this->respond(['status' => 404, 'message' => 'Laporan tidak ditemukan.'], 404);
         }
 
-        if (!in_array($laporan['status'], ['diproses', 'selesai', 'ditolak'])) {
+        $doc     = $docs[0];
+        $id      = $doc['id'];
+        $laporan = $doc['data'];
+
+        if (!in_array($laporan['status'] ?? '', ['diproses', 'selesai', 'ditolak'])) {
             return $this->respond([
                 'status'  => 400,
                 'message' => 'Feedback hanya dapat diberikan jika laporan diproses, selesai, atau ditolak.',
             ], 400);
         }
 
-        $input = $this->request->getJSON(true) ?? $this->request->getPost();
-        $rules = [
-            'rating'         => 'required|integer|greater_than_equal_to[1]|less_than_equal_to[5]',
-            'feedback_warga' => 'required|min_length[3]',
-        ];
-        if (isset($input['is_banding']) && (int)$input['is_banding'] === 1) {
-            $rules['alasan_urgensi'] = 'required|min_length[5]';
-        }
-        if (!$this->validate($rules)) {
-            return $this->respond(['status' => 422, 'message' => $this->validator->getErrors()], 422);
-        }
+        $input = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
 
-        $isUpdate   = !empty($laporan['rating']);
         $updateData = [
-            'rating'         => (int)$input['rating'],
-            'feedback_warga' => $input['feedback_warga'],
+            'rating'         => (int) ($input['rating'] ?? 0),
+            'feedback_warga' => $input['feedback_warga'] ?? '',
             'is_banding'     => 0,
-            'alasan_urgensi' => null,
+            'alasan_urgensi' => '',
+            'updated_at'     => date('Y-m-d H:i:s'),
         ];
-        if (isset($input['is_banding']) && (int)$input['is_banding'] === 1 && $laporan['status'] === 'ditolak') {
-            $updateData['is_banding']     = 1;
-            $updateData['alasan_urgensi'] = $input['alasan_urgensi'];
+
+        $isBanding = isset($input['is_banding']) && (int) $input['is_banding'] === 1 && ($laporan['status'] ?? '') === 'ditolak';
+        if ($isBanding) {
+            $updateData['is_banding']    = 1;
+            $updateData['alasan_urgensi'] = $input['alasan_urgensi'] ?? '';
             $updateData['status']         = 'baru';
         }
 
-        $model->update($laporan['id'], $updateData);
+        $this->db->collection('laporan')->doc($id)->update($updateData);
 
         return $this->respond([
             'status'  => 200,
-            'message' => isset($updateData['is_banding']) && $updateData['is_banding'] === 1
+            'message' => $isBanding
                 ? 'Banding dan ulasan berhasil diajukan. Laporan akan ditinjau kembali.'
-                : ($isUpdate ? 'Ulasan berhasil diperbarui. Terima kasih!' : 'Ulasan berhasil disimpan. Terima kasih!'),
-            'data'    => $model->getLaporanWithRelations($laporan['id']),
+                : 'Ulasan berhasil disimpan. Terima kasih!',
+            'data'    => $this->embedRelasi($this->db->collection('laporan')->getById($id)),
         ]);
     }
 }

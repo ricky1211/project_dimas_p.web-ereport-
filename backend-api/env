@@ -67,3 +67,11 @@
 #--------------------------------------------------------------------
 
 # logger.threshold = 4
+
+#--------------------------------------------------------------------
+# FIREBASE CONFIGURATION
+# Ganti nilai di bawah dengan konfigurasi Firebase project Anda
+#--------------------------------------------------------------------
+
+# FIREBASE_PROJECT_ID = your-firebase-project-id
+# FIREBASE_SERVICE_ACCOUNT_PATH = firebase-service-account.json

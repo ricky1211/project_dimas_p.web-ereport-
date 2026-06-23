@@ -3,93 +3,117 @@
 namespace App\Controllers;
 
 use CodeIgniter\RESTful\ResourceController;
+use App\Libraries\FirestoreClient;
 
 class DashboardController extends ResourceController
 {
     protected $format = 'json';
+    private FirestoreClient $db;
 
-    private function getLoggedInUser()
+    public function __construct()
+    {
+        $this->db = new FirestoreClient();
+    }
+
+    private function getLoggedInUser(): ?array
     {
         $authHeader = $this->request->getHeaderLine('Authorization');
         if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
             $token = substr($authHeader, 7);
-            $userModel = new \App\Models\UserModel();
-            return $userModel->where('token', $token)->first();
+            $users = $this->db->collection('users')->where('token', '==', $token);
+            return empty($users) ? null : $users[0];
         }
         return null;
     }
 
     public function stats()
     {
-        $db = \Config\Database::connect();
-        $user = $this->getLoggedInUser();
-        $isPetugas = ($user && $user['role'] === 'petugas');
+        $user      = $this->getLoggedInUser();
+        $isPetugas = ($user && ($user['data']['role'] ?? '') === 'petugas');
         $petugasId = $user ? $user['id'] : null;
 
-        $totalLaporanQuery = $db->table('laporan');
-        $totalBaruQuery = $db->table('laporan')->where('status', 'baru');
-        $totalDiprosesQuery = $db->table('laporan')->where('status', 'diproses');
-        $totalSelesaiQuery = $db->table('laporan')->where('status', 'selesai');
-        $totalDitolakQuery = $db->table('laporan')->where('status', 'ditolak');
+        // Ambil semua data dari Firestore
+        $semuaLaporan  = $this->db->collection('laporan')->get();
+        $semuaKategori = $this->db->collection('kategori_aduan')->get();
+        $semuaPelapor  = $this->db->collection('pelapor')->get();
 
+        // Filter laporan berdasarkan petugas jika diperlukan
         if ($isPetugas) {
-            $totalLaporanQuery->where('petugas_id', $petugasId);
-            $totalBaruQuery->where('petugas_id', $petugasId);
-            $totalDiprosesQuery->where('petugas_id', $petugasId);
-            $totalSelesaiQuery->where('petugas_id', $petugasId);
-            $totalDitolakQuery->where('petugas_id', $petugasId);
+            $semuaLaporan = array_values(array_filter(
+                $semuaLaporan,
+                fn($d) => ($d['data']['petugas_id'] ?? '') === $petugasId
+            ));
         }
 
-        $totalLaporan  = $totalLaporanQuery->countAllResults();
-        $totalBaru     = $totalBaruQuery->countAllResults();
-        $totalDiproses = $totalDiprosesQuery->countAllResults();
-        $totalSelesai  = $totalSelesaiQuery->countAllResults();
-        $totalDitolak  = $totalDitolakQuery->countAllResults();
-        
-        $totalKategori = $db->table('kategori_aduan')->countAllResults();
-        $totalPelapor  = $db->table('pelapor')->countAllResults();
-
-        // Laporan terbaru 5
-        $laporanTerbaruQuery = $db->table('laporan l')
-            ->select('l.id, l.kode_laporan, l.judul_laporan, l.status, l.tanggal_laporan, l.catatan_petugas, l.rating, l.feedback_warga, l.is_banding, l.alasan_urgensi, p.nama_pelapor, k.nama_kategori')
-            ->join('pelapor p', 'p.id = l.pelapor_id', 'left')
-            ->join('kategori_aduan k', 'k.id = l.kategori_id', 'left');
-
-        if ($isPetugas) {
-            $laporanTerbaruQuery->where('l.petugas_id', $petugasId);
+        // Hitung per status
+        $totalBaru     = 0;
+        $totalDiproses = 0;
+        $totalSelesai  = 0;
+        $totalDitolak  = 0;
+        foreach ($semuaLaporan as $d) {
+            match ($d['data']['status'] ?? '') {
+                'baru'     => $totalBaru++,
+                'diproses' => $totalDiproses++,
+                'selesai'  => $totalSelesai++,
+                'ditolak'  => $totalDitolak++,
+                default    => null,
+            };
         }
 
-        $laporanTerbaru = $laporanTerbaruQuery->orderBy('l.created_at', 'DESC')
-            ->limit(5)
-            ->get()
-            ->getResultArray();
+        // Laporan terbaru 5 dengan relasi
+        usort($semuaLaporan, fn($a, $b) => strcmp($b['data']['created_at'] ?? '', $a['data']['created_at'] ?? ''));
+        $kategoriMap = [];
+        foreach ($semuaKategori as $k) {
+            $kategoriMap[$k['id']] = $k['data']['nama_kategori'] ?? '';
+        }
+        $pelaporMap = [];
+        foreach ($semuaPelapor as $p) {
+            $pelaporMap[$p['id']] = $p['data']['nama_pelapor'] ?? '';
+        }
+        $laporanTerbaru = [];
+        foreach (array_slice($semuaLaporan, 0, 5) as $d) {
+            $laporanTerbaru[] = [
+                'id'              => $d['id'],
+                'kode_laporan'    => $d['data']['kode_laporan']    ?? '',
+                'judul_laporan'   => $d['data']['judul_laporan']   ?? '',
+                'status'          => $d['data']['status']          ?? '',
+                'tanggal_laporan' => $d['data']['tanggal_laporan'] ?? '',
+                'catatan_petugas' => $d['data']['catatan_petugas'] ?? '',
+                'rating'          => $d['data']['rating']          ?? 0,
+                'feedback_warga'  => $d['data']['feedback_warga']  ?? '',
+                'is_banding'      => $d['data']['is_banding']      ?? 0,
+                'alasan_urgensi'  => $d['data']['alasan_urgensi']  ?? '',
+                'nama_pelapor'    => $pelaporMap[$d['data']['pelapor_id'] ?? ''] ?? '-',
+                'nama_kategori'   => $kategoriMap[$d['data']['kategori_id'] ?? ''] ?? '-',
+            ];
+        }
 
         // Statistik per kategori
-        $statKategoriQuery = $db->table('laporan l')
-            ->select('k.nama_kategori, COUNT(l.id) as jumlah')
-            ->join('kategori_aduan k', 'k.id = l.kategori_id', 'left');
-
-        if ($isPetugas) {
-            $statKategoriQuery->where('l.petugas_id', $petugasId);
+        $statKategori = [];
+        foreach ($semuaLaporan as $d) {
+            $kid  = $d['data']['kategori_id'] ?? '';
+            $nama = $kategoriMap[$kid] ?? 'Lainnya';
+            if (!isset($statKategori[$nama])) $statKategori[$nama] = 0;
+            $statKategori[$nama]++;
         }
-
-        $statKategori = $statKategoriQuery->groupBy('k.nama_kategori')
-            ->get()
-            ->getResultArray();
+        $statKategoriArr = [];
+        foreach ($statKategori as $nama => $jumlah) {
+            $statKategoriArr[] = ['nama_kategori' => $nama, 'jumlah' => $jumlah];
+        }
 
         return $this->respond([
             'status'  => 200,
             'message' => 'Statistik dashboard berhasil diambil.',
             'data'    => [
-                'total_laporan'  => $totalLaporan,
+                'total_laporan'  => count($semuaLaporan),
                 'total_baru'     => $totalBaru,
                 'total_diproses' => $totalDiproses,
                 'total_selesai'  => $totalSelesai,
                 'total_ditolak'  => $totalDitolak,
-                'total_kategori' => $totalKategori,
-                'total_pelapor'  => $totalPelapor,
+                'total_kategori' => count($semuaKategori),
+                'total_pelapor'  => count($semuaPelapor),
                 'laporan_terbaru'=> $laporanTerbaru,
-                'stat_kategori'  => $statKategori,
+                'stat_kategori'  => $statKategoriArr,
             ],
         ]);
     }
